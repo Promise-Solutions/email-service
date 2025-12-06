@@ -1,0 +1,135 @@
+name: workflow-ci-prd
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  continuous-integration:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Subir containers com Docker Compose
+        run: |
+          echo "Subindo containers..."
+          docker compose up -d
+          sleep 30
+          docker ps -a
+
+      - name: Compilar sem testes
+        run: mvn clean package -DskipTests
+
+      - name: Rodar testes unitários e integração
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3308
+          MYSQL_DATABASE: studiozero
+          MYSQL_USER: root
+          MYSQL_PASSWORD: studiozero
+          RABBITMQ_USER: studiozero-admin
+          RABBITMQ_PASSWORD: studiozero-rmq-pass
+          RABBITMQ_HOST: localhost
+          RABBITMQ_PORT: 5672
+        run: mvn test -e -X
+
+      - name: Derrubar containers
+        if: always()
+        run: docker compose down -v
+
+      # -------------------------------------------------------
+      # LOGIN DOCKER HUB
+      # -------------------------------------------------------
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # -------------------------------------------------------
+      # EXTRAIR VERSÃO DO POM
+      # -------------------------------------------------------
+      - name: Obter versão do projeto
+        id: project_version
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      # -------------------------------------------------------
+      # BUILD IMAGEM
+      # -------------------------------------------------------
+      - name: Build da imagem Docker
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-api"
+          VERSION="${{ steps.project_version.outputs.VERSION }}"
+          echo "Build → $IMAGE:$VERSION"
+          echo "Build → $IMAGE:latest"
+          docker build -t $IMAGE:$VERSION -t $IMAGE:latest .
+
+      # -------------------------------------------------------
+      # PUSH
+      # -------------------------------------------------------
+      - name: Push da imagem
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-api"
+          VERSION="${{ steps.project_version.outputs.VERSION }}"
+          docker push $IMAGE:$VERSION
+          docker push $IMAGE:latest
+
+      # -------------------------------------------------------
+      # DEPLOY PARA AWS (public -> private)
+      # Acessa a instância pública via SSH e, a partir dela, conecta na
+      # instância privada para remover containers e subir o docker-compose
+      # que fica em /home/ubuntu/app/studiozero (sempre usa :latest).
+      # -------------------------------------------------------
+      - name: Deploy to AWS (public -> private)
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.DEPLOY_PUBLIC_HOST }}
+          username: ${{ secrets.DEPLOY_PUBLIC_USER }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT }}
+          script: |
+            set -e
+            echo 'Preparando chave temporária para acesso à instância privada'
+            cat > /tmp/deploy_key <<'SSH_KEY'
+            ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+            SSH_KEY
+            chmod 600 /tmp/deploy_key
+
+            echo 'Conectando da instância pública na instância privada e executando deploy'
+            ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key ${{ secrets.DEPLOY_PRIVATE_USER }}@${{ secrets.DEPLOY_PRIVATE_HOST }} <<'REMOTE_CMDS'
+              set -e
+              echo 'Removendo containers antigos (se existirem)'
+              docker rm -f email-service email-service-2 || true
+
+              echo 'Indo para o diretório do app e atualizando imagens'
+              cd /home/ubuntu/app/studiozero || exit 1
+
+              # Puxa imagens latest (opcional, garante que a tag latest esteja atualizada)
+              docker compose pull || true
+
+              echo 'Derrubando compose atual e apagando volumes temporários (se houver)'
+              docker compose down -v || true
+
+              echo 'Subindo containers em background (detached)'
+              docker compose up -d
+
+              echo 'Deploy concluído na instância privada'
+            REMOTE_CMDS
+
+            echo 'Limpeza da chave temporária'
+            shred -u /tmp/deploy_key || rm -f /tmp/deploy_key || true
