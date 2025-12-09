@@ -73,7 +73,7 @@ jobs:
       # -------------------------------------------------------
       - name: Build da imagem Docker
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-api"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-ms"
           VERSION="${{ steps.project_version.outputs.VERSION }}"
           echo "Build → $IMAGE:$VERSION"
           echo "Build → $IMAGE:latest"
@@ -84,7 +84,7 @@ jobs:
       # -------------------------------------------------------
       - name: Push da imagem
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-api"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/studiozero-ms"
           VERSION="${{ steps.project_version.outputs.VERSION }}"
           docker push $IMAGE:$VERSION
           docker push $IMAGE:latest
