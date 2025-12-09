@@ -8,7 +8,7 @@ WORKDIR /app
 COPY target/service.email-0.0.1-SNAPSHOT.jar app.jar
 
 # Exponha a porta usada pela aplicação
-EXPOSE 5001
+EXPOSE 5005
 
 # Comando para rodar a aplicação
 ENTRYPOINT ["java", "-jar", "app.jar"]
