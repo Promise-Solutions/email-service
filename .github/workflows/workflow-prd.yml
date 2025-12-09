@@ -1,4 +1,4 @@
-name: workflow-ci/cd-prd
+name: workflow-ci/cd-prd-ms
 
 on:
   pull_request:
