@@ -120,13 +120,13 @@ jobs:
               cd /home/ubuntu/app/studiozero || exit 1
 
               # Puxa imagens latest (opcional, garante que a tag latest esteja atualizada)
-              docker compose pull || true
+              docker-compose pull || true
 
               echo 'Derrubando compose atual e apagando volumes temporários (se houver)'
-              docker compose down -v || true
+              docker-compose down -v || true
 
               echo 'Subindo containers em background (detached)'
-              docker compose up -d
+              docker-compose up -d
 
               echo 'Deploy concluído na instância privada'
             REMOTE_CMDS
