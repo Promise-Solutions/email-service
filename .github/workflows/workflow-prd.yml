@@ -1,4 +1,4 @@
-name: workflow-ci/cd-prd-ms
+name: workflow-ci/cd-prd-microservice
 
 on:
   pull_request:
