@@ -123,7 +123,7 @@ jobs:
               docker-compose pull || true
 
               echo 'Derrubando compose atual e apagando volumes temporários (se houver)'
-              docker-compose down -v || true
+              docker-compose down || true
 
               echo 'Subindo containers em background (detached)'
               docker-compose up -d
